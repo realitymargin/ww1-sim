@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>The code · WW1 Simulator · RealityMargin</title><meta name="theme-color" content="#050a07"><link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23050a07'/%3E%3Cpath d='M6 22h20M10 22V12M16 22V7M22 22v-6' stroke='%238dffb0' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E"><link rel="stylesheet" href="site.css"></head><body>
+<header class="nav"><div class="wrap navin"><a class="brand" href="index.html"><span class="dot"></span>WW1.SIM</a><nav><a class="navbtn" href="index.html">Simulator</a><a class="navbtn" href="index.html#experiments">Experiments</a><a class="navbtn" href="odds.html">Odds table</a><a class="navbtn" href="sources.html">Sources</a><a class="navbtn on" href="code.html">The code</a><a class="navbtn yt" href="https://www.youtube.com/@realitymargin" target="_blank" rel="noopener">▶ YouTube</a></nav></div></header>
+<main class="wrap doc"><section class="hero" style="padding-bottom:0"><p class="kicker">REALITYMARGIN · WW1 SIMULATOR</p><h1>The code</h1><p class="lead">The whole model, exactly as the video ran it (version 3.1, locked 31 October 2026). The browser copy that runs on this site is the same code with its Node file import removed.</p><div class="row"><a class="btn primary" href="index.html#sim">▶ Open the simulator</a></div></section>
+<div class="row" style="margin:6px 0 12px"><a class="btn" href="sim.js" download>⬇ Download sim.js</a><a class="btn" href="odds.html">Every odd as a table</a></div><pre class="code"><span class="c">// RealityMargin · "I Simulated WW1 … Times" — the war model. Version 3 (31 Oct 2026). v2 kept as sim_v2.mjs.</span>
+<span class="c">// One war = August 1914 onward, in half-year turns, through the real turning points of 1914–1918 in their real order.</span>
+<span class="c">// At each one the dice decide: does it go the way it really went, or the other way? Every probability is a judgement,</span>
+<span class="c">// written down with its reason and sources in INPUTS.md. Three columns: [against the Central Powers, historians' middle (headline), for them].</span>
+<span class="c">//</span>
+<span class="c">// What carries the war between the turning points is real data, not invented strengths (the WW2 sim's viewers: "a spinwheel, not data"):</span>
+<span class="c">//   each power's war effort each year = its 1913 GDP × its wartime GDP index × the share of GDP its government spent × its army's effectiveness</span>
+<span class="c">//   (Broadberry &amp; Harrison, The Economics of World War I, 2005, Tables 1, 2, 4, 5; effectiveness from the war's own death toll, Urlanis 1971).</span>
+<span class="c">//   The U-boat war runs on the official monthly tonnage lost (Fayle, Seaborne Trade III, 1924, Table I(a)); the 1918 Spring Offensive on the</span>
+<span class="c">//   divisions on the Western Front (192 German, about 180 British and French).</span>
+<span class="c">// Each half-year both sides lose will in proportion to the effort they face; the blockade drains the Central Powers on top.</span>
+<span class="c">// Calibrated in sim_test.mjs: real history must end in the Central Powers' collapse in the second half of 1918.</span>
+<span class="c">// Outcomes: CENTRAL POWERS WIN (the Western Allies forced to terms) · ALLIED WIN (the Central Powers collapse)</span>
+<span class="c">//           · COMPROMISE PEACE (a negotiated peace, no winner) · STILL FIGHTING 1920.</span>
+<span class="c">// Every fork goes through roll(name, p): it always draws one random number (overrides never shift the stream), and an</span>
+<span class="c">// override map H can pin any fork (forced experiments, tests). Usage: node sim.mjs → results_v3.json + RESULTS_v3.md   Tests: node sim_test.mjs</span>
+import fs from 'node:fs';
+
+<span class="c">// [against the Central Powers, middle, for the Central Powers] — the chance that the event happens</span>
+export const ODDS = {
+  <span class="c">// 1914</span>
+  eastFirst:     [0.02, 0.05, 0.10],  <span class="c">// Germany keeps the East-first plan: attack Russia, defend in the west, Belgium left alone</span>
+  ukOut:         [0.02, 0.05, 0.10],  <span class="c">// Britain stays out in August 1914 although Belgium is invaded</span>
+  ukOutNoBelgium:[0.35, 0.50, 0.65],  <span class="c">//   …Britain stays out at first when Belgium is NOT invaded</span>
+  ukJoinsLater:  [0.20, 0.15, 0.10],  <span class="c">//   …per half-year: a neutral Britain comes in later</span>
+  ruEastPrussia: [0.35, 0.25, 0.15],  <span class="c">// Russia wins in East Prussia in August 1914 (no Tannenberg)</span>
+  marne:         [0.05, 0.10, 0.18],  <span class="c">// Germany wins the Marne in September 1914</span>
+  franceOut14:   [0.25, 0.40, 0.55],  <span class="c">//   …and France makes peace before the end of 1914</span>
+  restMakePeace: [0.60, 0.75, 0.85],  <span class="c">// France knocked out: Britain and Russia make peace within the year</span>
+  ypres:         [0.05, 0.10, 0.15],  <span class="c">// Germany takes the Channel ports (Calais, Boulogne) in the autumn of 1914</span>
+  ottomanIn:     [0.55, 0.70, 0.85],  <span class="c">// the Ottoman Empire joins the Central Powers (November 1914)</span>
+  italyCP:       [0.01, 0.03, 0.06],  <span class="c">// Italy honours the Triple Alliance and joins the Central Powers</span>
+  italyEntente:  [0.85, 0.75, 0.65],  <span class="c">//   …otherwise: Italy joins the Allies (May 1915)</span>
+  <span class="c">// 1915</span>
+  gallipoli:     [0.25, 0.15, 0.08],  <span class="c">// the Allies force the Dardanelles: Constantinople falls, the Ottomans are out</span>
+  ruPeace15:     [0.02, 0.05, 0.10],  <span class="c">// after the Great Retreat, Russia makes a separate peace in 1915</span>
+  bulgariaIn:    [0.55, 0.70, 0.80],  <span class="c">// Bulgaria joins the Central Powers (October 1915), Serbia overrun</span>
+  <span class="c">// 1916</span>
+  verdun:        [0.02, 0.05, 0.09],  <span class="c">// Verdun breaks the French army</span>
+  jutland:       [0.02, 0.04, 0.08],  <span class="c">// the High Seas Fleet wins decisively at Jutland and the blockade loosens</span>
+  brusilov:      [0.12, 0.07, 0.03],  <span class="c">// the Brusilov offensive knocks Austria-Hungary out of the war</span>
+  romaniaIn:     [0.80, 0.70, 0.60],  <span class="c">// Romania joins the Allies (August 1916)</span>
+  peace1916:     [0.02, 0.05, 0.08],  <span class="c">// December 1916: Germany's peace note and Wilson's call for terms lead to a negotiated peace</span>
+  <span class="c">// 1917</span>
+  usw:           [0.85, 0.80, 0.70],  <span class="c">// Germany resumes unrestricted submarine warfare (February 1917)</span>
+  convoyLate:    [0.10, 0.20, 0.35],  <span class="c">//   …and the Admiralty resists convoys until 1918 (they became general in August 1917)</span>
+  ukFloor:       [22000, 25000, 27000], <span class="c">//   …the imports Britain cannot go below, thousand tons a year (1917: 34,000 imported, 26,000 of it food, munitions and ore; Fayle III), drawn ±10%</span>
+  restAfterUK:   [0.65, 0.80, 0.90],  <span class="c">// Britain driven to terms by the U-boats: France makes peace too</span>
+  telegram:      [0.95, 0.90, 0.80],  <span class="c">// Zimmermann sends the telegram to Mexico (January 1917)</span>
+  usEnters:      [0.95, 0.92, 0.85],  <span class="c">// the US declares war in April 1917 after the U-boats and the telegram</span>
+  usEntersNoTel: [0.85, 0.75, 0.60],  <span class="c">//   …after the U-boats, with no telegram</span>
+  usEntersLate:  [0.40, 0.25, 0.12],  <span class="c">//   …with no unrestricted U-boat war: the US still enters, a year later</span>
+  sixtus:        [0.07, 0.04, 0.02],  <span class="c">// Austria-Hungary makes a separate peace (the Sixtus affair, 1917)</span>
+  frMutiny:      [0.02, 0.05, 0.10],  <span class="c">// the French army mutinies of May 1917 become a collapse</span>
+  ruRevolution:  [0.80, 0.88, 0.95],  <span class="c">// the February Revolution: the Tsar falls (March 1917)</span>
+  lenin:         [0.80, 0.90, 0.95],  <span class="c">//   …Germany sends Lenin home through Germany in a sealed train (April 1917)</span>
+  ruExitLenin:   [0.75, 0.85, 0.92],  <span class="c">//   …Russia leaves the war (Bolshevik coup, Brest-Litovsk), with Lenin back</span>
+  ruExitNoLenin: [0.25, 0.40, 0.55],  <span class="c">//   …Russia leaves the war anyway, without Lenin</span>
+  ruExitNoRev:   [0.05, 0.10, 0.15],  <span class="c">//   …Russia leaves the war with the Tsar still in power</span>
+  caporetto:     [0.05, 0.10, 0.20],  <span class="c">// Caporetto knocks Italy out of the war (October 1917)</span>
+  peace1917:     [0.02, 0.04, 0.07],  <span class="c">// August 1917: the Pope's peace note and the Reichstag peace resolution lead to a negotiated peace</span>
+  <span class="c">// 1918</span>
+  eastKept:      [0.95, 0.85, 0.70],  <span class="c">// Germany keeps about 50 divisions (a million men) in the East in 1918 to hold Ukraine and the Baltic</span>
+  michael:       [0.06, 0.12, 0.20],  <span class="c">// the Spring Offensive splits the British from the French (at the real balance of divisions)</span>
+  splitTerms:    [0.35, 0.50, 0.65],  <span class="c">//   …and the split Allies seek terms</span>
+  <span class="c">// the endgame, per half-year</span>
+  compromise:    [0.10, 0.20, 0.30],  <span class="c">// both sides near exhaustion: a negotiated peace</span>
+};
+export const SET = { against: 0, mid: 1, for: 2 };
+
+<span class="c">// ---- the data (INPUTS.md has every source) ----</span>
+const YEARS = [1914, 1915, 1916, 1917, 1918];
+export const DATA = {
+  <span class="c">// 1913 GDP, billion international dollars of 1990 (Broadberry &amp; Harrison 2005, Tables 1 and 2)</span>
+  gdp: { uk: 226.4, fr: 138.7, ru: 257.7, it: 91.3, us: 511.6, ro: 11.7, ser: 7.2, ger: 244.3, ah: 100.5, ot: 25.3, bul: 7.4 },
+  <span class="c">// real GDP, % of 1913, 1914–1918 (Table 4; Italy "kept going and did not collapse": 100; Ottoman Empire down 30–40% by 1918: ramp; small states flat 90)</span>
+  idx: { uk: [92.3, 94.9, 108.0, 105.3, 114.8], us: [101.0, 109.1, 111.5, 112.5, 113.2], ger: [85.2, 80.9, 81.7, 81.8, 81.8],
+    ah: [83.5, 77.4, 76.5, 74.8, 73.3], ru: [94.5, 95.5, 79.8, 67.7, 67.7], fr: [92.9, 91.0, 95.6, 81.0, 63.9], it: [100, 100, 100, 100, 100],
+    ot: [95, 90, 80, 70, 65], bul: [90, 90, 90, 90, 90], ro: [90, 90, 90, 90, 90], ser: [90, 90, 90, 90, 90] },
+  <span class="c">// government spending, % of GDP (Table 5). Russia and Italy: France's series; Austria-Hungary: Germany's × 0.85; small powers and the Ottomans: 30</span>
+  gov: { uk: [23.5, 52.4, 63.7, 61.3, 49.4], fr: [22.3, 46.4, 47.2, 49.9, 53.5], ger: [23.9, 43.8, 50.3, 59.0, 50.1], us: [16.6, 16.6, 16.6, 16.6, 16.6] },
+  <span class="c">// fighting effectiveness per unit of effort (judgement anchored on the war's deaths: the Allies lost 5.4 million soldiers, the Central Powers 4.0 million, Urlanis 1971)</span>
+  eff: { ger: 1.3, ah: 0.8, ot: 0.9, bul: 0.9, uk: 1.0, fr: 1.0, ru: 0.6, it: 0.7, us: 0.85, ro: 0.5, ser: 0.8 },
+  <span class="c">// Americans who had sailed for France, as a share of the 2,084,000 who reached it, by months after the declaration (6 April 1917):</span>
+  <span class="c">// 194,000 by the end of 1917, 1,000,000 by 1 July 1918, the second million by the end of October (Ayres, The War with Germany: A Statistical Summary, 1919)</span>
+  aef: [[0, 0], [3, 0.01], [9, 0.093], [12, 0.16], [15, 0.48], [19, 0.96], [20, 1]],
+  ukLand: 0.7,                                      <span class="c">// the share of Britain's war effort that faced the Central Powers on land (the rest: the Navy, the Empire's garrisons)</span>
+  <span class="c">// the U-boat war: world tonnage lost through enemy action, Feb–Dec 1917, thousand gross tons (Fayle 1924, Table I(a))</span>
+  sunk1917: [540, 594, 881, 597, 688, 558, 512, 352, 459, 289, 399],
+  sunk1918: [307, 319, 343, 279, 296, 256, 261, 284, 188, 119, 18, 0],   <span class="c">// Jan–Dec 1918, same table (the war ends in November)</span>
+  <span class="c">// Britain's ocean-going fleet (steamers of 1,600 gross tons and up) at the end of each month, thousand gross tons (Fayle III, Table V(a))</span>
+  ukFleet1917: [16591, 16464, 16291, 15874, 15664, 15412, 15209, 15060, 14975, 14827, 14755, 14580],
+  ukFleet1918: [14547, 14414, 14425, 14482, 14448, 14413, 14417, 14346, 14363, 14407, 14444, 14626],
+};
+const CP = ['ger', 'ah', 'ot', 'bul'], ALLIES = ['uk', 'fr', 'ru', 'it', 'us', 'ro', 'ser'];
+const series = (k, p) =&gt; DATA[k][p] || (k === 'gov' ? (p === 'ru' || p === 'it' ? DATA.gov.fr : p === 'ah' ? DATA.gov.ger.map(v =&gt; v * 0.85) : [30, 30, 30, 30, 30]) : null);
+const yi = y =&gt; Math.max(0, Math.min(4, Math.floor(y) - 1914));
+<span class="c">// one power's war effort in a half-year (before damage from the forks)</span>
+<span class="c">// the average of the American arrival curve between two month marks</span>
+export function aefShare(m0, m1) { const A = DATA.aef, at = m =&gt; { if (m &lt;= 0) return 0; for (let i = 1; i &lt; A.length; i++) if (m &lt;= A[i][0]) return A[i - 1][1] + (A[i][1] - A[i - 1][1]) * (m - A[i - 1][0]) / (A[i][0] - A[i - 1][0]); return 1; };
+  let s = 0; for (let k = 0; k &lt; 12; k++) s += at(m0 + (m1 - m0) * (k + 0.5) / 12); return s / 12; }
+export const effort = (p, y) =&gt; DATA.gdp[p] * series('idx', p)[yi(y)] / 100 * series('gov', p)[yi(y)] / 100 * DATA.eff[p] * (p === 'uk' ? DATA.ukLand : 1);
+
+export const MECH = {
+  wear: 0.055,                    <span class="c">// will lost per half-year per unit of the effort ratio facing each side (calibrated)</span>
+  hunger: 0.016, hungerCap: 0.06, <span class="c">// the blockade: extra Central Powers will lost per half-year, growing each half-year Britain holds the sea (calibrated)</span>
+  michaelCost: 0.12,              <span class="c">// a failed 1918 offensive: about 900,000 German casualties by July</span>
+  usShock: 0.05,                  <span class="c">// the US declares war: the Central Powers know time is now against them</span>
+  noDollars: 0.06,                <span class="c">// from mid-1917, without the US at war, Allied will lost per half-year to the dollar shortage (Burk 1985)</span>
+  otTieUk: 0.85, otTieRu: 0.9,   <span class="c">// the share of Britain's and Russia's land effort left for Germany and Austria while the Ottomans fight (judgement)</span>
+  compromiseBelow: 0.35,          <span class="c">// both sides' will under this: a negotiated peace becomes possible</span>
+  preConvoy: 643, convoyFrom: 6, <span class="c">// the U-boats: average Feb–Jul 1917 loss; convoys general from August (6 months after Feb)</span>
+  uGrow: 0.02, uCap: 800,        <span class="c">// without convoys, monthly sinkings grow 2% a month as more U-boats come into service, up to 800,000 tons (judgement)</span>
+  fleetShare: 0.5, add1917: 84, add1918: 115, <span class="c">// fitted to Table V(a): about half of each month's world loss came off Britain's ocean-going fleet; new ships and requisitions added 84 / 115 thousand tons a month</span>
+  convoyRate: 270,               <span class="c">// average monthly world loss Jan–Oct 1918, with convoys (Fayle Table I(a))</span>
+  importsPerTon: 2.2,            <span class="c">// a year's imports per gross ton of ocean-going fleet (1917: 34 million tons imported on about 15.4 million tons of ships)</span>
+  gerWest: 150, eastTransfer: 42, eastExtra: 30, ahOutCost: 15, frDiv: 100, ukDiv: 60, usDivMar18: 4, michaelEven: 0.95, michaelSpan: 0.22, michaelUs: 0.75, splitUs: 0.4,
+};
+
+<span class="c">// "the Central Powers' way" for each fork, used by the forced experiments</span>
+export const CP_WAY = { eastKept: false, eastFirst: true, ukOut: true, ruEastPrussia: false, marne: true, franceOut14: true, ypres: true, ottomanIn: true, italyCP: true,
+  gallipoli: false, ruPeace15: true, bulgariaIn: true, verdun: true, jutland: true, brusilov: false, romaniaIn: false, usw: false, convoyLate: true,
+  uboats: true, telegram: false, usEnters: false, sixtus: false, frMutiny: true, ruRevolution: true, lenin: true, ruExit: true, caporetto: true, michael: true, splitTerms: true };
+<span class="c">// what really happened, used by the calibration tests</span>
+export const REAL = { eastKept: true, eastFirst: false, ukOut: false, ruEastPrussia: false, marne: false, ypres: false, ottomanIn: true, italyCP: false, italyEntente: true,
+  gallipoli: false, ruPeace15: false, bulgariaIn: true, verdun: false, jutland: false, brusilov: false, romaniaIn: true, peace1916: false, usw: true, convoyLate: false,
+  uboats: false, telegram: true, usEnters: true, sixtus: false, frMutiny: false, ruRevolution: true, lenin: true, ruExit: true, caporetto: false, peace1917: false, michael: false };
+
+export const warSeed = (seed, i) =&gt; (Math.imul(seed ^ 0x9E3779B9, 0x85EBCA6B) + Math.imul(i + 1, 0xC2B2AE35)) &gt;&gt;&gt; 0;
+export function rng(seed) { let s = seed &gt;&gt;&gt; 0; return () =&gt; { s += 0x6D2B79F5; let t = s; t = Math.imul(t ^ (t &gt;&gt;&gt; 15), t | 1); t ^= t + Math.imul(t ^ (t &gt;&gt;&gt; 7), t | 61); return ((t ^ (t &gt;&gt;&gt; 14)) &gt;&gt;&gt; 0) / 4294967296; }; }
+
+<span class="c">// one war. P = odds for this set; H = overrides {fork: true/false}</span>
+export function war(P, R, H = {}) {
+  const roll = (k, p) =&gt; { const r = R(); return k in H ? !!H[k] : r &lt; p; };
+  const path = [], M = MECH;
+  const at = { uk: 'war', fr: 'war', ru: 'war', it: 'neutral', us: 'neutral', ro: 'neutral', ser: 'war', ger: 'war', ah: 'war', ot: 'neutral', bul: 'neutral' };
+  const mod = Object.fromEntries([...CP, ...ALLIES].map(p =&gt; [p, 1]));
+  const S = { cpWill: 1, enWill: 1, blockade: 0, usFrom: 0 };
+  const end = (outcome, why, y) =&gt; ({ outcome, why, y, path, cpWin: outcome === 'CENTRAL POWERS WIN', S });
+  const cpWin = (why, y) =&gt; end('CENTRAL POWERS WIN', why, y), alWin = (why, y) =&gt; end('ALLIED WIN', why, y), draw = (why, y) =&gt; end('COMPROMISE PEACE', why, y);
+
+  <span class="c">// ---- 1914 ----</span>
+  if (roll('eastFirst', P.eastFirst)) { S.plan = 'east'; path.push('Germany attacks Russia first'); }
+  if (roll('ukOut', S.plan === 'east' ? P.ukOutNoBelgium : P.ukOut)) { at.uk = 'neutral'; path.push('Britain stays out'); }
+  if (S.plan === 'east') { mod.fr *= 0.9; mod.ru *= 0.85; } <span class="c">// France bleeds attacking into Lorraine (Plan XVII); Russia faces most of the German army</span>
+  if (roll('ruEastPrussia', P.ruEastPrussia)) { mod.ger *= 0.95; mod.ru *= 1.05; path.push('Russia wins in East Prussia'); }
+  <span class="c">// the Marne: harder with Britain's six divisions in the line, easier without them; impossible under the East-first plan</span>
+  const marneP = S.plan === 'east' ? 0 : Math.min(0.9, P.marne * (at.uk === 'war' ? 1 : 1.6));
+  if (roll('marne', marneP)) { path.push('Germany wins the Marne');
+    if (roll('franceOut14', P.franceOut14)) { path.push('France makes peace 1914');
+      if (at.uk !== 'war' || roll('restMakePeace', P.restMakePeace)) return cpWin('France knocked out in 1914; the rest make peace', 1915.0);
+      at.fr = 'out'; S.enWill -= 0.25; }
+    else { R(); mod.fr *= 0.85; S.enWill -= 0.1; } <span class="c">// the north and Paris's suburbs lost, the government in Bordeaux</span>
+  } else { R(); R(); }
+  if (roll('ypres', P.ypres) &amp;&amp; at.uk === 'war' &amp;&amp; S.plan !== 'east') { S.ports = true; mod.uk *= 0.95; path.push('Germany takes the Channel ports'); }
+  if (roll('ottomanIn', P.ottomanIn)) { at.ot = 'war'; path.push('Ottomans join'); }
+  else { S.straits = true; mod.ru *= 1.1; } <span class="c">// the Straits stay open: Russia keeps its Black Sea trade and Allied supplies (review v3: was missing)</span>
+  if (roll('italyCP', P.italyCP)) { at.it = 'cp'; path.push('Italy joins the Central Powers'); }
+  else if (!roll('italyEntente', P.italyEntente)) path.push('Italy stays neutral'); else S.italyJoins = true;
+
+  for (let y = 1915.0; y &lt; 1920; y += 0.5) {
+    <span class="c">// ---- the turning points, in real order ----</span>
+    if (y === 1915.0) {
+      if (roll('gallipoli', P.gallipoli) &amp;&amp; at.ot === 'war') { at.ot = 'out'; mod.ru *= 1.1; S.straits = true; path.push('Allies take the Dardanelles'); }
+      if (roll('ruPeace15', P.ruPeace15 * (S.plan === 'east' ? 3 : 1) * (S.straits ? 0.5 : 1)) &amp;&amp; at.ru === 'war') { at.ru = 'out'; path.push('Russia makes peace 1915'); }
+    }
+    if (y === 1915.5) {
+      if (S.italyJoins) { at.it = 'war'; path.push('Italy joins the Allies'); }
+      if (roll('bulgariaIn', P.bulgariaIn * (at.ot === 'war' ? 1 : 0.3))) { at.bul = 'war'; at.ser = 'out'; path.push('Bulgaria joins'); }
+    }
+    if (y === 1916.0) {
+      if (roll('verdun', P.verdun) &amp;&amp; at.fr === 'war') { mod.fr *= 0.7; S.enWill -= 0.2; path.push('Verdun breaks the French army'); }
+      if (roll('jutland', P.jutland) &amp;&amp; at.uk === 'war') { S.jutland = true; S.enWill -= 0.05; path.push('Germany wins at Jutland'); }
+    }
+    if (y === 1916.5) {
+      if (roll('brusilov', P.brusilov) &amp;&amp; at.ru === 'war') { at.ah = 'out'; S.cpWill -= 0.2; path.push('Brusilov knocks out Austria-Hungary'); }
+      if (roll('romaniaIn', P.romaniaIn) &amp;&amp; at.ah === 'war') { at.ro = 'war'; path.push('Romania joins the Allies'); }
+    }
+    if (y === 1917.0) {
+      if (roll('peace1916', P.peace1916)) { path.push('Peace of 1917'); return draw('the peace notes of December 1916 lead to a negotiated peace', 1917.0); }
+      <span class="c">// the U-boat gamble</span>
+      const usw = roll('usw', P.usw) &amp;&amp; at.uk === 'war';
+      if (usw) { path.push('Unrestricted U-boat war');
+        const late = roll('convoyLate', P.convoyLate); if (late) path.push('No convoys in 1917');
+        const luck = 0.85 + 0.3 * R(), floor = P.ukFloor * (0.9 + 0.2 * R());
+        <span class="c">// Britain's fleet, month by month from February 1917: half of each month's world loss comes off it, new ships go on it</span>
+        let F = DATA.ukFleet1917[0], m = 0, uRate = M.preConvoy; S.fleet = [F];
+        for (; m &lt; 35; m++) { const real = m &lt; 11 ? DATA.sunk1917[m] : m &lt; 23 ? DATA.sunk1918[m - 11] : 0;
+          let sunk = real; if (late &amp;&amp; m &gt;= M.convoyFrom) { uRate = Math.min(M.uCap, uRate * (1 + M.uGrow)); sunk = Math.max(real, uRate); }
+          if (m &gt;= 22 &amp;&amp; !late) sunk = M.convoyRate; <span class="c">// after the real war's end, a war still going: the 1918 convoy-era average</span>
+          sunk *= luck * (S.ports ? 1.15 : 1);
+          F += -M.fleetShare * sunk + (m &lt; 11 ? M.add1917 : M.add1918); S.fleet.push(Math.round(F));
+          if (F * M.importsPerTon &lt; floor) break; }
+        S.ukFloorTons = Math.round(floor);
+        const breaks = 'uboats' in H ? H.uboats : m &lt; 35;
+        if (breaks) S.ukBreakT = 'uboats' in H ? 1917.75 : 1917 + (2 + m) / 12; <span class="c">// the month imports fall below the floor</span>
+      } else { for (let k = 0; k &lt; 3; k++) R(); }
+      const tel = roll('telegram', P.telegram); if (tel) S.telegram = true;
+      if (usw) { if (roll('usEnters', tel ? P.usEnters : P.usEntersNoTel)) { at.us = 'war'; S.usFrom = 1917.25; S.cpWill -= M.usShock; path.push('US enters 1917'); } else path.push('US stays out'); }
+      else if (roll('usEnters', P.usEntersLate)) { at.us = 'war'; S.usFrom = 1918.25; S.cpWill -= M.usShock; path.push('US enters 1918'); } else path.push('US stays out');
+      if (roll('sixtus', P.sixtus) &amp;&amp; at.ah === 'war') { at.ah = 'out'; S.cpWill -= 0.15; path.push('Austria-Hungary makes a separate peace'); }
+      if (roll('frMutiny', P.frMutiny) &amp;&amp; at.fr === 'war') { path.push('French army collapses 1917');
+        if (at.uk !== 'war' || roll('restMakePeace', P.restMakePeace * (at.us === 'war' ? 0.4 : 1))) return cpWin('the French army collapses in 1917; the Allies make peace', 1917.5);
+        at.fr = 'out'; S.enWill -= 0.25; }
+      else R();
+      <span class="c">// Russia, 1917: the Tsar, Lenin, the exit</span>
+      const revP = P.ruRevolution * (S.straits ? 0.7 : 1) * (at.ah === 'out' ? 0.6 : 1);
+      if (roll('ruRevolution', revP) &amp;&amp; at.ru === 'war') { S.revolution = true; path.push('Tsar falls');
+        if (roll('lenin', P.lenin)) { S.lenin = true; path.push('Lenin sent home'); } }
+      else R();
+    }
+    if (y === 1917.5) {
+      const exitP = S.revolution ? (S.lenin ? P.ruExitLenin : P.ruExitNoLenin) : P.ruExitNoRev;
+      if (roll('ruExit', exitP) &amp;&amp; at.ru === 'war') { at.ru = 'out'; S.grain = true; S.cpWill += 0.1; path.push('Russia leaves the war'); }
+      if (roll('caporetto', P.caporetto) &amp;&amp; at.it === 'war') { at.it = 'out'; path.push('Caporetto knocks Italy out'); }
+      if (roll('peace1917', P.peace1917)) { path.push('Peace of 1917'); return draw('the peace notes of 1917 lead to a negotiated peace', 1918.0); }
+    }
+    if (y === 1918.0) {
+      <span class="c">// the Spring Offensive, on the divisions in the west</span>
+      const kept = roll('eastKept', P.eastKept); if (!kept &amp;&amp; at.ru !== 'war') path.push('The East emptied for the west');
+      const gerDiv = M.gerWest + (at.ru !== 'war' ? M.eastTransfer + (kept ? 0 : M.eastExtra) : 0) - (at.ah !== 'war' ? M.ahOutCost : 0);
+      const alDiv = (at.fr === 'war' ? M.frDiv * mod.fr : 0) + (at.uk === 'war' ? M.ukDiv * mod.uk : 0) + (at.us === 'war' &amp;&amp; S.usFrom &lt; 1918 ? M.usDivMar18 : 0);
+      S.divRatio = gerDiv / Math.max(1, alDiv);
+      const usIn = at.us === 'war';
+      <span class="c">// with the Americans in, French divisions came out of quiet sectors and the US held the Marne in June 1918; nobody seeks terms with 10,000 Americans landing a day</span>
+      const mP = P.michael * Math.max(0, Math.min(2.5, (S.divRatio - M.michaelEven) / M.michaelSpan)) * (usIn ? M.michaelUs : 1);
+      if (roll('michael', Math.min(0.9, mP))) { path.push('Spring Offensive splits the Allies');
+        if (roll('splitTerms', P.splitTerms * (usIn ? M.splitUs : 1))) return cpWin('the 1918 Spring Offensive splits the Allies and they seek terms', 1918.5);
+        S.enWill -= 0.2; S.cpWill -= M.michaelCost / 2; }
+      else { R(); if (at.ru !== 'war') { S.cpWill -= M.michaelCost; mod.ger *= 0.9; } }
+    }
+    <span class="c">// the U-boats: Britain's imports fall below the floor in this half-year</span>
+    <span class="c">// within a half-year, a collapse of will is taken to come about two months before its end (real history: November 1918), so a break in the last two months waits for the next half-year</span>
+    if (S.ukBreakT !== undefined &amp;&amp; S.ukBreakT &lt;= y + 0.33 &amp;&amp; at.uk === 'war' &amp;&amp; !S.ukBroken) { S.ukBroken = true; path.push('U-boats force Britain to terms');
+      if (at.fr === 'war' &amp;&amp; roll('restAfterUK', P.restAfterUK * (at.us === 'war' &amp;&amp; y &gt;= 1918 ? 0.5 : 1))) return cpWin('the U-boats force Britain to terms, and France follows', y + 0.5);
+      at.uk = 'out'; S.blockade = 0; S.enWill -= 0.25; }
+    else R();
+    if (at.uk === 'neutral') { if (roll('ukJoinsLater', P.ukJoinsLater)) { at.uk = 'war'; path.push('Britain enters ' + Math.floor(y)); } } else R();
+
+    <span class="c">// ---- the war of resources ----</span>
+    const cpE = CP.reduce((s, p) =&gt; s + (at[p] === 'war' ? effort(p, y) * mod[p] : 0), 0) + (at.it === 'cp' ? effort('it', y) : 0);
+    const usW = at.us === 'war' ? aefShare((y - S.usFrom) * 12, (y + 0.5 - S.usFrom) * 12) : 0; <span class="c">// the half-year's average share of the army in France</span>
+    <span class="c">// the Ottoman fronts (Gallipoli, Mesopotamia, Palestine, the Caucasus) tie down British and Russian armies: about 500,000 British Empire troops by 1918</span>
+    const otTie = p =&gt; at.ot === 'war' ? (p === 'uk' ? M.otTieUk : p === 'ru' ? M.otTieRu : 1) : 1;
+    const ruNoRev = p =&gt; p === 'ru' &amp;&amp; y &gt;= 1917 &amp;&amp; !S.revolution ? DATA.idx.ru[2] / DATA.idx.ru[yi(y)] : 1; <span class="c">// Russia's 1917 collapse in output came with the revolution; without it, its 1916 level</span>
+    const enE = ALLIES.reduce((s, p) =&gt; s + (at[p] === 'war' ? effort(p, y) * mod[p] * (p === 'us' ? usW : 1) * otTie(p) * ruNoRev(p) : 0), 0);
+    if (enE &lt;= 1) return cpWin('no Allied power left in the field', y + 0.5);
+    const ratio = enE / cpE;
+    if (at.uk === 'war') S.blockade = Math.min(M.hungerCap, S.blockade + M.hunger * (S.jutland ? 0.5 : 1));
+    S.cpWill -= M.wear * ratio + S.blockade * (S.grain ? 0.8 : 1);
+    S.enWill -= M.wear / ratio + (y &gt;= 1917.5 &amp;&amp; at.us !== 'war' &amp;&amp; at.uk === 'war' ? M.noDollars : 0);
+    if (H.__trace) H.__trace.push({ y, enE: +enE.toFixed(1), cpE: +cpE.toFixed(1), ratio: +ratio.toFixed(2), cpWill: +S.cpWill.toFixed(2), enWill: +S.enWill.toFixed(2), blockade: +S.blockade.toFixed(3) });
+    if (S.cpWill &lt;= 0) return alWin('the Central Powers collapse', y + 0.5);
+    if (S.enWill &lt;= 0) return cpWin('the Allies are worn out and seek terms', y + 0.5);
+    if (roll('compromise', S.cpWill &lt; M.compromiseBelow &amp;&amp; S.enWill &lt; M.compromiseBelow ? P.compromise : 0)) { path.push('Compromise peace'); return draw('both sides exhausted: a negotiated peace', y + 0.5); }
+  }
+  return end('STILL FIGHTING 1920', 'no side able to finish the war by 1920', 1920);
+}
+
+export const oddsFor = set =&gt; { const P = {}; for (const k in ODDS) P[k] = ODDS[k][SET[set]]; return P; };
+const ROUTINE = /^(Ottomans join|Bulgaria joins|Italy joins the Allies|Romania joins the Allies|Unrestricted U-boat war|US enters 1917|Tsar falls|Lenin sent home|Russia leaves the war)$/;
+export function batch(set, n, seed, H) { const P = oddsFor(set); const out = { n, cpWins: 0, outcomes: {}, why: {}, paths: {}, endYear: {} };
+  for (let i = 0; i &lt; n; i++) { const r = war(P, rng(warSeed(seed, i)), H); out.outcomes[r.outcome] = (out.outcomes[r.outcome] || 0) + 1; out.why[r.why] = (out.why[r.why] || 0) + 1;
+    const ey = String(Math.floor(r.y - 0.01)); out.endYear[ey] = (out.endYear[ey] || 0) + 1;
+    if (r.cpWin) { out.cpWins++; const key = r.path.filter(p =&gt; !ROUTINE.test(p)).join(' → ') || '(as in history until the end)'; out.paths[key] = (out.paths[key] || 0) + 1; } }
+  return out; }
+
+export const FORCED = Object.keys(CP_WAY);
+if (process.argv[1] &amp;&amp; /[\\/]sim\.mjs$/.test(process.argv[1])) { <span class="c">// run the full study only when called directly</span>
+  const N = +(process.argv[2] || 500000);
+  const res = { date: new Date().toISOString(), version: 3, main: batch('mid', N, 19140728), sets: { against: batch('against', 100000, 1), for: batch('for', 100000, 2) }, forced: {} };
+  res.against = {};
+  for (const f of FORCED) { res.forced[f] = batch('mid', 100000, 1918, { [f]: CP_WAY[f] }); res.against[f] = batch('mid', 100000, 1918, { [f]: !CP_WAY[f] }); }
+  res.forcedBase = batch('mid', 100000, 1918);
+  <span class="c">// how much the headline leans on the judgements that are not data</span>
+  const sens = (label, f) =&gt; { const keep = JSON.stringify({ M: MECH, D: DATA.eff }); f(); const b = batch('mid', 100000, 1919); const k = JSON.parse(keep); Object.assign(MECH, k.M); Object.assign(DATA.eff, k.D); return [label, b.cpWins]; };
+  res.assumptions = [
+    sens('German army effectiveness 1.15 instead of 1.3', () =&gt; { DATA.eff.ger = 1.15; }),
+    sens('German army effectiveness 1.45 instead of 1.3', () =&gt; { DATA.eff.ger = 1.45; }),
+    sens('Russian army effectiveness 0.8 instead of 0.6', () =&gt; { DATA.eff.ru = 0.8; }),
+  ];
+  fs.writeFileSync(new URL('./results_v3.json', import.meta.url), JSON.stringify(res, null, 1));
+  const pct = (a, n) =&gt; (100 * a / n).toFixed(2) + '%'; const m = res.main;
+  let md = `# Simulation results, model v3 (${res.date.slice(0, 10)})\n\nHeadline: **${m.n.toLocaleString()} wars** on the historians' middle odds → **the Central Powers won ${m.cpWins.toLocaleString()} times (${pct(m.cpWins, m.n)})**.\n\n## Outcomes\n`;
+  for (const [k, v] of Object.entries(m.outcomes).sort((a, b) =&gt; b[1] - a[1])) md += `- ${k}: ${v.toLocaleString()} (${pct(v, m.n)})\n`;
+  md += `\n## How the war ended\n`; for (const [k, v] of Object.entries(m.why).sort((a, b) =&gt; b[1] - a[1])) md += `- ${k}: ${v.toLocaleString()} (${pct(v, m.n)})\n`;
+  md += `\n## The year the war ended\n`; for (const [k, v] of Object.entries(m.endYear).sort()) md += `- ${k}: ${v.toLocaleString()} (${pct(v, m.n)})\n`;
+  md += `\n## The winning paths (top 12)\n`; for (const [k, v] of Object.entries(m.paths).sort((a, b) =&gt; b[1] - a[1]).slice(0, 12)) md += `- ${v.toLocaleString()} (${pct(v, m.cpWins)} of wins): ${k}\n`;
+  md += `\n## Sensitivity (100,000 wars each)\n- Odds against the Central Powers: ${pct(res.sets.against.cpWins, 1e5)}\n- Odds for the Central Powers: ${pct(res.sets.for.cpWins, 1e5)}\n`;
+  md += `\n## One fork forced the Central Powers' way (100,000 wars each; same-size baseline ${pct(res.forcedBase.cpWins, 1e5)})\n`; for (const [k, v] of Object.entries(res.forced).sort((a, b) =&gt; b[1].cpWins - a[1].cpWins)) md += `- ${k}: ${pct(v.cpWins, v.n)}\n`;
+  md += `
+## The judgements that are not data (100,000 wars each, middle odds)
+`; for (const [k, v] of res.assumptions) md += `- ${k}: ${pct(v, 1e5)}
+`;
+  md += `
+## One fork forced the Allies' way (100,000 wars each)
+`; for (const [k, v] of Object.entries(res.against).sort((a, b) =&gt; a[1].cpWins - b[1].cpWins)) md += `- ${k}: ${pct(v.cpWins, v.n)}
+`;
+  fs.writeFileSync(new URL('./RESULTS_v3.md', import.meta.url), md); console.log(md);
+}
+</pre></main>
+<footer class="foot"><div class="wrap">RealityMargin · “I Simulated World War 1 500,000 Times” · model version 3.1, locked 31 October 2026 · <a href="https://www.youtube.com/@realitymargin" target="_blank" rel="noopener">The video on YouTube</a></div></footer>
+<script data-goatcounter="https://realitymargin.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+</body></html>
